@@ -62,7 +62,20 @@ func (relic *Tunnel) MaintainQueue() {
 
 	for true {
 		time.Sleep(time.Second * time.Duration(int64(relic.SendInterval)))
-		go relic.EmptyQueue()
+
+		tunnelLock.Lock()
+		var tempSendQueue = make([]string, len(relic.SendQueue), len(relic.SendQueue))
+
+		for i := range relic.SendQueue {
+			tempSendQueue[i] = relic.SendQueue[i]
+		}
+
+		relic.SendQueue = nil
+		relic.RunningByteSize = 0
+
+		go relic.EmptyQueue(tempSendQueue)
+
+		tunnelLock.Unlock()
 	}
 
 }
@@ -93,25 +106,34 @@ func (relic *Tunnel) RegisterEvent(event map[string]interface{}) {
 			fmt.Println("tunnelRelic: Event queue buffer reached!")
 		}
 
-		go relic.EmptyQueue()
+		var tempSendQueue = make([]string, len(relic.SendQueue), len(relic.SendQueue))
+
+		for i := range relic.SendQueue {
+			tempSendQueue[i] = relic.SendQueue[i]
+		}
+
+		relic.SendQueue = nil
+		relic.RunningByteSize = 0
+
+		go relic.EmptyQueue(tempSendQueue)
 	}
 }
 
-func (relic *Tunnel) EmptyQueue() {
+func (relic *Tunnel) EmptyQueue(tempItems []string) {
 
-	if len(relic.SendQueue) < 1 {
+	if len(tempItems) < 1 {
 		return
 	}
 	if relic.Silent != true {
 		fmt.Println("tunnelRelic: Gophers will now proceed to deliver queued events to New Relic.")
 	}
 
-	requestStr := "[" + strings.Join(relic.SendQueue, ",") + "]"
+	requestStr := "[" + strings.Join(tempItems, ",") + "]"
 
 	var eventJson = []byte(requestStr)
 	req, err := http.NewRequest("POST", relic.InsightsURL, bytes.NewBuffer(eventJson))
 	if err != nil {
-		relic.SendQueue = nil
+		fmt.Println("tunnelRelic: Failed to make http request to New Relic", err.Error())
 		return
 	}
 	req.Header.Set("X-Insert-Key", relic.InsightsAPI)
@@ -119,8 +141,6 @@ func (relic *Tunnel) EmptyQueue() {
 
 	client := &http.Client{}
 	resp, err := client.Do(req)
-	relic.SendQueue = nil
-	relic.RunningByteSize = 0
 
 	if err != nil {
 		fmt.Println(err.Error())

@@ -41,7 +41,10 @@ func NewTunnel(Account string, APIKey string, EventName string, send int, sendBu
 		RunningByteSize: 0,
 	}
 
-	go relic.MaintainQueue()
+	if relic.SendInterval == -1 {
+			go relic.MaintainQueue()
+	}
+
 	return relic
 
 }
